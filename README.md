@@ -149,6 +149,10 @@ Where:
 - **Hard Negative Interference**: Analysis of distractor impact on retrieval
 - **Theoretical vs Actual Recall**: Comparison to measure distractor effects
 
+### Contact
+
+For questions or issues regarding this dataset, please contact 52285901045@stu.ecnu.edu.cn.
+
 ---
 
 ## 中文
@@ -295,3 +299,7 @@ L(q) = -1/|P| Σ_{k∈P} log p_k
 - **Recall@k**：标准检索召回率，k=1,3,5,10
 - **硬负样本干扰**：分析干扰样本对检索的影响
 - **理论vs实际召回**：比较以衡量干扰样本效果
+
+### 联系方式
+
+如有关于此数据集的问题或疑问，请联系 52285901045@stu.ecnu.edu.cn。
