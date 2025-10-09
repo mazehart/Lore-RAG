@@ -84,6 +84,28 @@ msmarco_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="msmarco_modif
 musique_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="musique_modified_test")
 ```
 
+### Models
+
+We provide fine-tuned query encoder models based on the LORE method:
+
+#### Fine-tuned Query Encoders
+- **XiaSheng/Lore-Qwen3-embedding-0.6B**: LORE-enhanced Qwen3 embedding model for query encoding
+- **XiaSheng/Lore-Bge3**: LORE-enhanced BGE-M3 model for query encoding
+
+These models are specifically fine-tuned to better encode queries for retrieval tasks using our contrastive learning approach.
+
+```python
+from sentence_transformers import SentenceTransformer
+
+# Load fine-tuned query encoder
+query_encoder = SentenceTransformer("XiaSheng/Lore-Qwen3-embedding-0.6B")
+# or
+query_encoder = SentenceTransformer("XiaSheng/Lore-Bge3")
+
+# Encode query
+query_embedding = query_encoder.encode("your query here")
+```
+
 ### Quick Start
 
 #### 1. Training
@@ -207,6 +229,28 @@ test_dataset = load_dataset("XiaSheng/Logic-ORiented-Test")
 hotpotqa_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="hotpotqa_modified_test")
 msmarco_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="msmarco_modified_test")
 musique_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="musique_modified_test")
+```
+
+### 模型
+
+我们提供基于LORE方法微调的查询编码器模型：
+
+#### 微调的查询编码器
+- **XiaSheng/Lore-Qwen3-embedding-0.6B**: 基于LORE增强的Qwen3嵌入模型，用于查询编码
+- **XiaSheng/Lore-Bge3**: 基于LORE增强的BGE-M3模型，用于查询编码
+
+这些模型专门针对查询编码进行了微调，使用我们的对比学习方法来提升检索任务的性能。
+
+```python
+from sentence_transformers import SentenceTransformer
+
+# 加载微调的查询编码器
+query_encoder = SentenceTransformer("XiaSheng/Lore-Qwen3-embedding-0.6B")
+# 或者
+query_encoder = SentenceTransformer("XiaSheng/Lore-Bge3")
+
+# 编码查询
+query_embedding = query_encoder.encode("你的查询内容")
 ```
 
 ### 快速开始
