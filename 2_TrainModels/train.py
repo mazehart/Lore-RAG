@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Single-stage contrastive learning training script (following paper methodology):
-Single-stage, three-level (P1/P2/N) objectives, alpha=0.3 as P2 sample weight.
+LORE (Logic-ORiented Retriever Enhancement) Training Script
+
+This script implements the contrastive learning training methodology described in the paper:
+"Logic-ORiented Retriever Enhancement via Contrastive Learning"
+
+Key Features:
+- Three-tier contrastive learning with fine-grained sample classification:
+  * P (Positive, label=1): Chunks sufficient to answer the query
+  * N1 (Distractor, label=-1): Chunks used by LLM in query rewriting, seemingly relevant but unhelpful
+  * N2 (Negative, label=0): Other unused negative chunks
+- Dual encoder architecture: frozen document encoder M_d and trainable query encoder M_q
+- InfoNCE-based loss with differentiated weights (β > α) for hierarchical separation P ≻ N1 ≻ N2
+- Temperature scaling and logit-space weighting for enhanced discrimination
 """
 
 import os
@@ -19,6 +30,7 @@ import matplotlib.pyplot as plt
 from utils.unified_monitor import UnifiedMonitor
 from transformers import Trainer, TrainingArguments, TrainerCallback
 import json
+import argparse
 
 # Set random seed
 seed = 0
@@ -122,20 +134,20 @@ class TrainingCurvePlotCallback(TrainerCallback):
         self.eval_losses = []
         
         # Similarities data - recorded by category, including average, max, min values
-        self.train_similarities_pos = {'avg': [], 'max': [], 'min': []}      # 正样本相似度统计
-        self.train_similarities_weak_neg = {'avg': [], 'max': [], 'min': []} # 弱负样本相似度统计
-        self.train_similarities_strong_neg = {'avg': [], 'max': [], 'min': []} # 强负样本相似度统计
+        self.train_similarities_pos = {'avg': [], 'max': [], 'min': []}  # P (Positive, label=1) similarity stats
+        self.train_similarities_n2 = {'avg': [], 'max': [], 'min': []}   # N2 (Negative, label=0) similarity stats
+        self.train_similarities_n1 = {'avg': [], 'max': [], 'min': []}   # N1 (Distractor, label=-1) similarity stats
         self.eval_similarities_pos = {'avg': [], 'max': [], 'min': []}
-        self.eval_similarities_weak_neg = {'avg': [], 'max': [], 'min': []}
-        self.eval_similarities_strong_neg = {'avg': [], 'max': [], 'min': []}
+        self.eval_similarities_n2 = {'avg': [], 'max': [], 'min': []}
+        self.eval_similarities_n1 = {'avg': [], 'max': [], 'min': []}
         
         # Temporary storage for computing sliding averages
         self.temp_train_sims_pos = []
-        self.temp_train_sims_weak_neg = []
-        self.temp_train_sims_strong_neg = []
+        self.temp_train_sims_n2 = []
+        self.temp_train_sims_n1 = []
         self.temp_eval_sims_pos = []
-        self.temp_eval_sims_weak_neg = []
-        self.temp_eval_sims_strong_neg = []
+        self.temp_eval_sims_n2 = []
+        self.temp_eval_sims_n1 = []
         
         self.output_name = output_name
         self.json_name = json_name
@@ -143,7 +155,7 @@ class TrainingCurvePlotCallback(TrainerCallback):
         self.current_step = 0
     
     def record_similarities(self, similarities_list, labels_list, is_training=True):
-        """Record similarities data, classified by P1/P2/N"""
+        """Record similarities data, classified by P/N1/N2"""
         try:
             # Process similarities and labels for each batch
             for similarities, labels in zip(similarities_list, labels_list):
@@ -152,18 +164,18 @@ class TrainingCurvePlotCallback(TrainerCallback):
                 labels = labels.detach().cpu().numpy() if hasattr(labels, 'detach') else labels
                 
                 # Collect similarities by label classification
-                pos_sims = similarities[labels == 1]        # 正样本: label==1
-                weak_neg_sims = similarities[labels == 0]   # 弱负样本: label==0
-                strong_neg_sims = similarities[labels == -1] # 强负样本: label==-1
+                pos_sims = similarities[labels == 1]   # P (Positive, label=1)
+                n2_sims = similarities[labels == 0]    # N2 (Negative, label=0)
+                n1_sims = similarities[labels == -1]   # N1 (Distractor, label=-1)
                 
                 if is_training:
                     self.temp_train_sims_pos.extend(pos_sims.tolist())
-                    self.temp_train_sims_weak_neg.extend(weak_neg_sims.tolist())
-                    self.temp_train_sims_strong_neg.extend(strong_neg_sims.tolist())
+                    self.temp_train_sims_n2.extend(n2_sims.tolist())
+                    self.temp_train_sims_n1.extend(n1_sims.tolist())
                 else:
                     self.temp_eval_sims_pos.extend(pos_sims.tolist())
-                    self.temp_eval_sims_weak_neg.extend(weak_neg_sims.tolist())
-                    self.temp_eval_sims_strong_neg.extend(strong_neg_sims.tolist())
+                    self.temp_eval_sims_n2.extend(n2_sims.tolist())
+                    self.temp_eval_sims_n1.extend(n1_sims.tolist())
         except Exception as e:
             print(f"Error recording similarities: {e}")
     
@@ -185,25 +197,25 @@ class TrainingCurvePlotCallback(TrainerCallback):
                 self.train_similarities_pos['max'].append(0.0)
                 self.train_similarities_pos['min'].append(0.0)
                 
-            if self.temp_train_sims_weak_neg:
-                window_data = self.temp_train_sims_weak_neg[-self.window_size:]
-                self.train_similarities_weak_neg['avg'].append(np.mean(window_data))
-                self.train_similarities_weak_neg['max'].append(np.max(window_data))
-                self.train_similarities_weak_neg['min'].append(np.min(window_data))
+            if self.temp_train_sims_n2:
+                window_data = self.temp_train_sims_n2[-self.window_size:]
+                self.train_similarities_n2['avg'].append(np.mean(window_data))
+                self.train_similarities_n2['max'].append(np.max(window_data))
+                self.train_similarities_n2['min'].append(np.min(window_data))
             else:
-                self.train_similarities_weak_neg['avg'].append(0.0)
-                self.train_similarities_weak_neg['max'].append(0.0)
-                self.train_similarities_weak_neg['min'].append(0.0)
+                self.train_similarities_n2['avg'].append(0.0)
+                self.train_similarities_n2['max'].append(0.0)
+                self.train_similarities_n2['min'].append(0.0)
                 
-            if self.temp_train_sims_strong_neg:
-                window_data = self.temp_train_sims_strong_neg[-self.window_size:]
-                self.train_similarities_strong_neg['avg'].append(np.mean(window_data))
-                self.train_similarities_strong_neg['max'].append(np.max(window_data))
-                self.train_similarities_strong_neg['min'].append(np.min(window_data))
+            if self.temp_train_sims_n1:
+                window_data = self.temp_train_sims_n1[-self.window_size:]
+                self.train_similarities_n1['avg'].append(np.mean(window_data))
+                self.train_similarities_n1['max'].append(np.max(window_data))
+                self.train_similarities_n1['min'].append(np.min(window_data))
             else:
-                self.train_similarities_strong_neg['avg'].append(0.0)
-                self.train_similarities_strong_neg['max'].append(0.0)
-                self.train_similarities_strong_neg['min'].append(0.0)
+                self.train_similarities_n1['avg'].append(0.0)
+                self.train_similarities_n1['max'].append(0.0)
+                self.train_similarities_n1['min'].append(0.0)
             
             self._plot_and_save(args)
 
@@ -225,25 +237,25 @@ class TrainingCurvePlotCallback(TrainerCallback):
                 self.eval_similarities_pos['max'].append(0.0)
                 self.eval_similarities_pos['min'].append(0.0)
                 
-            if self.temp_eval_sims_weak_neg:
-                self.eval_similarities_weak_neg['avg'].append(np.mean(self.temp_eval_sims_weak_neg))
-                self.eval_similarities_weak_neg['max'].append(np.max(self.temp_eval_sims_weak_neg))
-                self.eval_similarities_weak_neg['min'].append(np.min(self.temp_eval_sims_weak_neg))
-                self.temp_eval_sims_weak_neg.clear()
+            if self.temp_eval_sims_n2:
+                self.eval_similarities_n2['avg'].append(np.mean(self.temp_eval_sims_n2))
+                self.eval_similarities_n2['max'].append(np.max(self.temp_eval_sims_n2))
+                self.eval_similarities_n2['min'].append(np.min(self.temp_eval_sims_n2))
+                self.temp_eval_sims_n2.clear()
             else:
-                self.eval_similarities_weak_neg['avg'].append(0.0)
-                self.eval_similarities_weak_neg['max'].append(0.0)
-                self.eval_similarities_weak_neg['min'].append(0.0)
+                self.eval_similarities_n2['avg'].append(0.0)
+                self.eval_similarities_n2['max'].append(0.0)
+                self.eval_similarities_n2['min'].append(0.0)
                 
-            if self.temp_eval_sims_strong_neg:
-                self.eval_similarities_strong_neg['avg'].append(np.mean(self.temp_eval_sims_strong_neg))
-                self.eval_similarities_strong_neg['max'].append(np.max(self.temp_eval_sims_strong_neg))
-                self.eval_similarities_strong_neg['min'].append(np.min(self.temp_eval_sims_strong_neg))
-                self.temp_eval_sims_strong_neg.clear()
+            if self.temp_eval_sims_n1:
+                self.eval_similarities_n1['avg'].append(np.mean(self.temp_eval_sims_n1))
+                self.eval_similarities_n1['max'].append(np.max(self.temp_eval_sims_n1))
+                self.eval_similarities_n1['min'].append(np.min(self.temp_eval_sims_n1))
+                self.temp_eval_sims_n1.clear()
             else:
-                self.eval_similarities_strong_neg['avg'].append(0.0)
-                self.eval_similarities_strong_neg['max'].append(0.0)
-                self.eval_similarities_strong_neg['min'].append(0.0)
+                self.eval_similarities_n1['avg'].append(0.0)
+                self.eval_similarities_n1['max'].append(0.0)
+                self.eval_similarities_n1['min'].append(0.0)
             
             self._plot_and_save(args)
 
@@ -271,40 +283,40 @@ class TrainingCurvePlotCallback(TrainerCallback):
             
             # Plot similarities curves - average as main line, max/min as upper/lower bounds
             if self.train_steps and len(self.train_similarities_pos['avg']) == len(self.train_steps):
-                # 正样本 - green
-                ax2.plot(self.train_steps, self.train_similarities_pos['avg'], label='Train 正样本 Avg (label=1)', color='green', linestyle='-', linewidth=2)
+                # P (Positive) - green
+                ax2.plot(self.train_steps, self.train_similarities_pos['avg'], label='Train P (Positive, label=1)', color='green', linestyle='-', linewidth=2)
                 ax2.fill_between(self.train_steps, self.train_similarities_pos['min'], self.train_similarities_pos['max'], 
-                               color='green', alpha=0.2, label='Train 正样本 Range')
+                               color='green', alpha=0.2, label='Train P Range')
                 
-                # 弱负样本 - orange
-                ax2.plot(self.train_steps, self.train_similarities_weak_neg['avg'], label='Train 弱负样本 Avg (label=0)', color='orange', linestyle='-', linewidth=2)
-                ax2.fill_between(self.train_steps, self.train_similarities_weak_neg['min'], self.train_similarities_weak_neg['max'], 
-                               color='orange', alpha=0.2, label='Train 弱负样本 Range')
+                # N2 (Negative) - orange
+                ax2.plot(self.train_steps, self.train_similarities_n2['avg'], label='Train N2 (Negative, label=0)', color='orange', linestyle='-', linewidth=2)
+                ax2.fill_between(self.train_steps, self.train_similarities_n2['min'], self.train_similarities_n2['max'], 
+                               color='orange', alpha=0.2, label='Train N2 Range')
                 
-                # 强负样本 - purple
-                ax2.plot(self.train_steps, self.train_similarities_strong_neg['avg'], label='Train 强负样本 Avg (label=-1)', color='purple', linestyle='-', linewidth=2)
-                ax2.fill_between(self.train_steps, self.train_similarities_strong_neg['min'], self.train_similarities_strong_neg['max'], 
-                               color='purple', alpha=0.2, label='Train 强负样本 Range')
+                # N1 (Distractor) - purple
+                ax2.plot(self.train_steps, self.train_similarities_n1['avg'], label='Train N1 (Distractor, label=-1)', color='purple', linestyle='-', linewidth=2)
+                ax2.fill_between(self.train_steps, self.train_similarities_n1['min'], self.train_similarities_n1['max'], 
+                               color='purple', alpha=0.2, label='Train N1 Range')
             
             if self.eval_steps and len(self.eval_similarities_pos['avg']) == len(self.eval_steps):
-                # 正样本 - green dashed line
-                ax2.plot(self.eval_steps, self.eval_similarities_pos['avg'], label='Eval 正样本 Avg (label=1)', color='green', linestyle='--', linewidth=2)
+                # P (Positive) - green dashed line
+                ax2.plot(self.eval_steps, self.eval_similarities_pos['avg'], label='Eval P (Positive, label=1)', color='green', linestyle='--', linewidth=2)
                 ax2.fill_between(self.eval_steps, self.eval_similarities_pos['min'], self.eval_similarities_pos['max'], 
-                               color='green', alpha=0.1, label='Eval 正样本 Range')
+                               color='green', alpha=0.1, label='Eval P Range')
                 
-                # 弱负样本 - orange dashed line
-                ax2.plot(self.eval_steps, self.eval_similarities_weak_neg['avg'], label='Eval 弱负样本 Avg (label=0)', color='orange', linestyle='--', linewidth=2)
-                ax2.fill_between(self.eval_steps, self.eval_similarities_weak_neg['min'], self.eval_similarities_weak_neg['max'], 
-                               color='orange', alpha=0.1, label='Eval 弱负样本 Range')
+                # N2 (Negative) - orange dashed line
+                ax2.plot(self.eval_steps, self.eval_similarities_n2['avg'], label='Eval N2 (Negative, label=0)', color='orange', linestyle='--', linewidth=2)
+                ax2.fill_between(self.eval_steps, self.eval_similarities_n2['min'], self.eval_similarities_n2['max'], 
+                               color='orange', alpha=0.1, label='Eval N2 Range')
                 
-                # 强负样本 - purple dashed line
-                ax2.plot(self.eval_steps, self.eval_similarities_strong_neg['avg'], label='Eval 强负样本 Avg (label=-1)', color='purple', linestyle='--', linewidth=2)
-                ax2.fill_between(self.eval_steps, self.eval_similarities_strong_neg['min'], self.eval_similarities_strong_neg['max'], 
-                               color='purple', alpha=0.1, label='Eval 强负样本 Range')
+                # N1 (Distractor) - purple dashed line
+                ax2.plot(self.eval_steps, self.eval_similarities_n1['avg'], label='Eval N1 (Distractor, label=-1)', color='purple', linestyle='--', linewidth=2)
+                ax2.fill_between(self.eval_steps, self.eval_similarities_n1['min'], self.eval_similarities_n1['max'], 
+                               color='purple', alpha=0.1, label='Eval N1 Range')
             
             ax2.set_xlabel('Global Step')
             ax2.set_ylabel('Similarity')
-            ax2.set_title('Similarities by Category (正样本/弱负样本/强负样本)')
+            ax2.set_title('Similarities by Category: P (Positive) / N1 (Distractor) / N2 (Negative)')
             ax2.legend()
             ax2.grid(True, alpha=0.3)
             
@@ -318,19 +330,20 @@ class TrainingCurvePlotCallback(TrainerCallback):
                     'steps': self.train_steps,
                     'losses': self.train_losses,
                     'similarities_pos': self.train_similarities_pos,
-                    'similarities_weak_neg': self.train_similarities_weak_neg,
-                    'similarities_strong_neg': self.train_similarities_strong_neg
+                    'similarities_n2': self.train_similarities_n2,
+                    'similarities_n1': self.train_similarities_n1
                 },
                 'eval_data': {
                     'steps': self.eval_steps,
                     'losses': self.eval_losses,
                     'similarities_pos': self.eval_similarities_pos,
-                    'similarities_weak_neg': self.eval_similarities_weak_neg,
-                    'similarities_strong_neg': self.eval_similarities_strong_neg
+                    'similarities_n2': self.eval_similarities_n2,
+                    'similarities_n1': self.eval_similarities_n1
                 },
                 'metadata': {
                     'window_size': self.window_size,
-                    'description': 'Training curves data with loss and similarities by category (正样本: label=1, 弱负样本: label=0, 强负样本: label=-1)',
+                    'description': 'Training curves data with loss and similarities by category following paper taxonomy',
+                    'label_definition': 'P (Positive, label=1): Chunks answering query | N1 (Distractor, label=-1): LLM-used chunks for rewriting | N2 (Negative, label=0): Other negative chunks',
                     'similarities_format': 'Each similarity category contains avg, max, min statistics',
                     'plot_strategy': 'Plots average values as main lines with max/min values as shaded ranges for all 3 categories'
                 }
@@ -347,25 +360,51 @@ class TrainingCurvePlotCallback(TrainerCallback):
                 pass
 
 
+def load_train_eval_dataset(dataset_root: str, train_dir: str = None, eval_dir: str = None):
+    """
+    Load train/evaluate datasets flexibly:
+    - If train_dir and eval_dir are provided, load them separately
+    - Else try to load a DatasetDict saved at dataset_root
+    - Else try to load Dataset from dataset_root/train and dataset_root/evaluate
+    """
+    from datasets import load_from_disk
+    if train_dir and eval_dir:
+        train_ds = load_from_disk(train_dir)
+        eval_ds = load_from_disk(eval_dir)
+        return {'train': train_ds, 'evaluate': eval_ds}
+    # try load as DatasetDict
+    loaded = load_from_disk(dataset_root)
+    if hasattr(loaded, 'keys') and 'train' in loaded and 'evaluate' in loaded:
+        return loaded
+    # fallback to subdirs
+    train_path = os.path.join(dataset_root, 'train')
+    eval_path = os.path.join(dataset_root, 'evaluate')
+    train_ds = load_from_disk(train_path)
+    eval_ds = load_from_disk(eval_path)
+    return {'train': train_ds, 'evaluate': eval_ds}
+
+
 def main():
-    # Directly set training parameters
-    class Args:
-        dataset_path = './data'  # 使用当前数据集路径
-        model_name = 'Qwen--Qwen3-Embedding-0.6B'
-        # model_name = 'BAAI--bge-m3'
-        model_path = f'/share/home/ecnuzwx/UnifiedRAG/cache/models--{model_name}'
-        batch_size = 8
-        learning_rate = 1e-5
-        num_epochs = 2
-        temperature = 0.05
-        alpha = 0.3  # 弱负样本权重
-        beta = 1.0   # 强负样本权重
-        weight_decay = 0.01
-        gpu_id = '1'
-        save_dir = f'save/{model_name}/Seed_{seed}_lr_{learning_rate}_epoch_{num_epochs}_temp_{temperature}_alpha_{alpha}_beta_{beta}'
-        gradient_accumulation_steps = 4
-    
-    args = Args()
+    parser = argparse.ArgumentParser(description='CoEn-RAG Training')
+    # data
+    parser.add_argument('--dataset_root', type=str, default=os.environ.get('COEN_DATA_DIR', './data'), help='Root directory for dataset')
+    parser.add_argument('--train_dir', type=str, default=None, help='Optional path to train split directory saved via save_to_disk')
+    parser.add_argument('--eval_dir', type=str, default=None, help='Optional path to evaluate split directory saved via save_to_disk')
+    # model
+    parser.add_argument('--base_model', type=str, default=os.environ.get('COEN_BASE_MODEL', 'BAAI/bge-m3'), help='Backbone model name or local path for SentenceTransformer')
+    # hyperparams
+    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--learning_rate', type=float, default=1e-5)
+    parser.add_argument('--num_epochs', type=int, default=2)
+    parser.add_argument('--temperature', type=float, default=0.05)
+    parser.add_argument('--alpha', type=float, default=0.3, help='weight for N2 (Negative, label=0)')
+    parser.add_argument('--beta', type=float, default=1.0, help='weight for N1 (Distractor, label=-1)')
+    parser.add_argument('--weight_decay', type=float, default=0.01)
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
+    parser.add_argument('--gpu_id', type=str, default=os.environ.get('CUDA_VISIBLE_DEVICES', '0'))
+    parser.add_argument('--save_dir', type=str, default=None, help='Output directory to save checkpoints and final model')
+
+    args = parser.parse_args()
     
     # Initialize unified monitor
     unified_monitor = UnifiedMonitor(device_id=args.gpu_id)
@@ -378,12 +417,14 @@ def main():
     print(f"Using device: {device}")
     
     # Create save directory
-    save_dir = args.save_dir
+    model_name_safe = args.base_model.replace('/', '--')
+    default_save = f'save/{model_name_safe}/Seed_{seed}_lr_{args.learning_rate}_epoch_{args.num_epochs}_temp_{args.temperature}_alpha_{args.alpha}_beta_{args.beta}'
+    save_dir = args.save_dir or default_save
     os.makedirs(save_dir, exist_ok=True)
     
     # Load dataset
-    print(f"Loading dataset: {args.dataset_path}")
-    dataset = load_from_disk(args.dataset_path)
+    print("Loading dataset...")
+    dataset = load_train_eval_dataset(args.dataset_root, args.train_dir, args.eval_dir)
     
     # Print dataset structure
     print("\n=== Dataset Structure ===")
@@ -401,7 +442,7 @@ def main():
     
     print('Starting to load model...')
     # Create model (device and mode managed by Trainer, no manual to/device and train here)
-    model = DualEncoderModel(args.model_path, temperature=args.temperature, alpha=args.alpha, beta=args.beta)
+    model = DualEncoderModel(args.base_model, temperature=args.temperature, alpha=args.alpha, beta=args.beta)
     print('Model loading completed')
     
     # Parameter statistics
