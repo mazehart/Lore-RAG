@@ -88,19 +88,6 @@ Where:
 - **Hard Negative Interference**: Analysis of distractor impact on retrieval
 - **Theoretical vs Actual Recall**: Comparison to measure distractor effects
 
-### Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@article{zhang2024lore,
-  title={Logic-ORiented Retriever Enhancement via Contrastive Learning},
-  author={Zhang, Wenxuan and Jiang, Yuan-Hao and Qi, Changyong and Jia, Rui and Wu, Yonghe},
-  journal={arXiv preprint},
-  year={2024}
-}
-```
-
 ---
 
 ## 中文
@@ -186,16 +173,3 @@ L(q) = -1/|P| Σ_{k∈P} log p_k
 - **Recall@k**：标准检索召回率，k=1,3,5,10
 - **硬负样本干扰**：分析干扰样本对检索的影响
 - **理论vs实际召回**：比较以衡量干扰样本效果
-
-### 引用
-
-如果您在研究中使用此代码，请引用：
-
-```bibtex
-@article{zhang2024lore,
-  title={Logic-ORiented Retriever Enhancement via Contrastive Learning},
-  author={Zhang, Wenxuan and Jiang, Yuan-Hao and Qi, Changyong and Jia, Rui and Wu, Yonghe},
-  journal={arXiv preprint},
-  year={2024}
-}
-```
