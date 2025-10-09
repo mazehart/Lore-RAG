@@ -151,7 +151,7 @@ Where:
 
 ### Contact
 
-For questions or issues regarding this dataset, please contact 52285901045@stu.ecnu.edu.cn.
+For questions or issues regarding this project, please contact 52285901045@stu.ecnu.edu.cn.
 
 ---
 
@@ -302,4 +302,4 @@ L(q) = -1/|P| Σ_{k∈P} log p_k
 
 ### 联系方式
 
-如有关于此数据集的问题或疑问，请联系 52285901045@stu.ecnu.edu.cn。
+如有关于此项目的问题或疑问，请联系 52285901045@stu.ecnu.edu.cn。
