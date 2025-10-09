@@ -8,7 +8,7 @@
 
 ### Overview
 
-LORE (Logic-ORiented Retriever Enhancement) is a novel embedding enhancement method that improves retrieval performance through fine-grained contrastive learning. This repository contains the implementation of the paper "Logic-ORiented Retriever Enhancement via Contrastive Learning".
+LORE (Logic-ORiented Retriever Enhancement) is a novel embedding enhancement method that improves retrieval performance through fine-grained contrastive learning.
 
 ### Key Features
 
@@ -43,6 +43,45 @@ CoEn-RAG/
 │   ├── evaluate.sh         # Evaluation shell script
 │   └── utils/              # Evaluation utilities
 └── Logic-ORiented Retriever Enhancement via Contrastive Learning/  # Paper source
+```
+
+### Datasets
+
+We provide pre-constructed datasets on Hugging Face Hub for training and evaluation:
+
+#### Training Dataset
+- **Repository**: [XiaSheng/Logic-ORiented-Retrieve](https://huggingface.co/datasets/XiaSheng/Logic-ORiented-Retrieve)
+- **Description**: Contrastive learning dataset with three-tier sample classification
+- **Splits**: `train` and `evaluate`
+- **Usage**: Used for training the LORE model with fine-grained contrastive learning
+
+```python
+from datasets import load_dataset
+
+# Load training dataset
+train_dataset = load_dataset("XiaSheng/Logic-ORiented-Retrieve", split="train")
+eval_dataset = load_dataset("XiaSheng/Logic-ORiented-Retrieve", split="evaluate")
+```
+
+#### Test Dataset
+- **Repository**: [XiaSheng/Logic-ORiented-Test](https://huggingface.co/datasets/XiaSheng/Logic-ORiented-Test)
+- **Description**: Unified test dataset with modified queries for evaluation
+- **Splits**: 
+  - `hotpotqa_modified_test`: Modified HotpotQA test questions (1999 examples)
+  - `msmarco_modified_test`: Modified MS MARCO test questions (1999 examples)
+  - `musique_modified_test`: Modified MuSiQue test questions (1999 examples)
+- **Usage**: Used for evaluating retrieval performance on logic-oriented queries
+
+```python
+from datasets import load_dataset
+
+# Load test dataset
+test_dataset = load_dataset("XiaSheng/Logic-ORiented-Test")
+
+# Load specific task splits
+hotpotqa_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="hotpotqa_modified_test")
+msmarco_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="msmarco_modified_test")
+musique_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="musique_modified_test")
 ```
 
 ### Quick Start
@@ -94,7 +133,7 @@ Where:
 
 ### 概述
 
-LORE（逻辑导向的检索器增强）是一种新颖的嵌入增强方法，通过细粒度对比学习提高检索性能。本仓库包含论文《Logic-ORiented Retriever Enhancement via Contrastive Learning》的实现。
+LORE（逻辑导向的检索器增强）是一种新颖的嵌入增强方法，通过细粒度对比学习提高检索性能。
 
 ### 主要特性
 
@@ -129,6 +168,45 @@ CoEn-RAG/
 │   ├── evaluate.sh         # 评估shell脚本
 │   └── utils/              # 评估工具
 └── Logic-ORiented Retriever Enhancement via Contrastive Learning/  # 论文源码
+```
+
+### 数据集
+
+我们在Hugging Face Hub上提供了预构建的训练和评估数据集：
+
+#### 训练数据集
+- **仓库地址**: [XiaSheng/Logic-ORiented-Retrieve](https://huggingface.co/datasets/XiaSheng/Logic-ORiented-Retrieve)
+- **描述**: 具有三级样本分类的对比学习数据集
+- **分割**: `train` 和 `evaluate`
+- **用途**: 用于训练具有细粒度对比学习的LORE模型
+
+```python
+from datasets import load_dataset
+
+# 加载训练数据集
+train_dataset = load_dataset("XiaSheng/Logic-ORiented-Retrieve", split="train")
+eval_dataset = load_dataset("XiaSheng/Logic-ORiented-Retrieve", split="evaluate")
+```
+
+#### 测试数据集
+- **仓库地址**: [XiaSheng/Logic-ORiented-Test](https://huggingface.co/datasets/XiaSheng/Logic-ORiented-Test)
+- **描述**: 包含修改查询的统一测试数据集，用于评估
+- **分割**: 
+  - `hotpotqa_modified_test`: 修改的HotpotQA测试问题（1999个样本）
+  - `msmarco_modified_test`: 修改的MS MARCO测试问题（1999个样本）
+  - `musique_modified_test`: 修改的MuSiQue测试问题（1999个样本）
+- **用途**: 用于评估逻辑导向查询的检索性能
+
+```python
+from datasets import load_dataset
+
+# 加载测试数据集
+test_dataset = load_dataset("XiaSheng/Logic-ORiented-Test")
+
+# 加载特定任务分割
+hotpotqa_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="hotpotqa_modified_test")
+msmarco_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="msmarco_modified_test")
+musique_test = load_dataset("XiaSheng/Logic-ORiented-Test", split="musique_modified_test")
 ```
 
 ### 快速开始
